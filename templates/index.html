@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EInk Editor</title>
+<style>
+/* ===== E-INK OPTIMIZED STYLES ===== */
+*, *::before, *::after {
+    margin: 0; padding: 0; box-sizing: border-box;
+    transition: none !important;
+    animation: none !important;
+}
+
+:root {
+    --bg:    #ffffff;
+    --fg:    #000000;
+    --mid:   #666666;
+    --light: #cccccc;
+    --border:#000000;
+    --font-editor: "Courier New", Courier, monospace;
+    --font-ui:     "Georgia", "Times New Roman", serif;
+    --font-size:   16px;
+}
+
+html, body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: var(--font-size);
+    line-height: 1.6;
+    height: 100%;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* --- Toolbar --- */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 2px solid var(--border);
+    background: var(--bg);
+    align-items: center;
+}
+
+.toolbar button,
+.toolbar label,
+.toolbar select {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    padding: 6px 14px;
+    border: 2px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    cursor: pointer;
+    font-weight: bold;
+    min-height: 36px;
+}
+
+.toolbar button:active {
+    background: var(--fg);
+    color: var(--bg);
+}
+
+.toolbar .separator {
+    width: 2px;
+    height: 28px;
+    background: var(--border);
+    margin: 0 4px;
+}
+
+.toolbar .filename {
+    font-family: var(--font-editor);
+    font-size: 13px;
+    color: var(--mid);
+    padding: 6px 8px;
+    border: 1px dashed var(--light);
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.toolbar .status {
+    font-size: 12px;
+    color: var(--mid);
+    padding: 4px 8px;
+    margin-left: auto;
+}
+
+#file-input { display: none; }
+
+/* --- Main area --- */
+.main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+/* --- Editor pane (read-only view) --- */
+.editor-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.editor-pane.split {
+    border-right: 2px solid var(--border);
+}
+
+.pane-header {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--light);
+    color: var(--mid);
+    background: var(--bg);
+    display: flex;
+    justify-content: space-between;
+}
+
+.pane-header .cursor-info {
+    font-weight: normal;
+    font-family: var(--font-editor);
+    font-size: 11px;
+}
+
+/* Contenitore con numeri di riga */
+.editor-view {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding: 8px 0;
+    font-family: var(--font-editor);
+    font-size: var(--font-size);
+    line-height: 1.7;
+}
+
+.editor-line {
+    display: flex;
+    min-height: 1.7em;
+    padding: 0 12px 0 0;
+}
+
+.editor-line.active {
+    background: #f0f0f0;
+}
+
+.line-number {
+    width: 50px;
+    min-width: 50px;
+    text-align: right;
+    padding-right: 10px;
+    color: var(--light);
+    user-select: none;
+    border-right: 1px solid var(--light);
+    margin-right: 10px;
+    font-size: 0.85em;
+    line-height: 1.95;
+}
+
+.line-content {
+    white-space: pre;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Cursore (blocco nero fisso, e-ink friendly) */
+.cursor-block {
+    background: var(--fg);
+    color: var(--bg);
+    display: inline;
+}
+
+/* --- Preview pane --- */
+.preview-pane {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.preview-pane.visible {
+    display: flex;
+}
+
+#preview {
+    flex: 1;
+    padding: 12px 16px;
+    overflow-y: auto;
+    font-family: var(--font-ui);
+    font-size: var(--font-size);
+    line-height: 1.7;
+}
+
+/* --- Markdown rendered styles --- */
+#preview h1, #preview h2, #preview h3,
+#preview h4, #preview h5, #preview h6 {
+    margin: 0.8em 0 0.4em;
+    line-height: 1.3;
+    border-bottom: 1px solid var(--light);
+    padding-bottom: 4px;
+}
+#preview h1 { font-size: 1.8em; }
+#preview h2 { font-size: 1.5em; }
+#preview h3 { font-size: 1.25em; }
+#preview p { margin: 0.6em 0; }
+#preview ul, #preview ol { margin: 0.6em 0; padding-left: 1.8em; }
+#preview blockquote {
+    margin: 0.6em 0; padding: 4px 12px;
+    border-left: 4px solid var(--border); color: var(--mid);
+}
+#preview code {
+    font-family: var(--font-editor); font-size: 0.9em;
+    background: #f0f0f0; padding: 1px 4px; border: 1px solid var(--light);
+}
+#preview pre {
+    margin: 0.6em 0; padding: 10px 12px;
+    background: #f5f5f5; border: 2px solid var(--border); overflow-x: auto;
+}
+#preview pre code { background: none; border: none; padding: 0; }
+#preview table { border-collapse: collapse; margin: 0.6em 0; width: 100%; }
+#preview th, #preview td { border: 2px solid var(--border); padding: 6px 10px; text-align: left; }
+#preview th { font-weight: bold; background: #f0f0f0; }
+#preview hr { border: none; border-top: 2px solid var(--border); margin: 1em 0; }
+#preview a { color: var(--fg); text-decoration: underline; font-weight: bold; }
+
+/* --- Connected indicator --- */
+.connected { color: #000; font-weight: bold; }
+.disconnected { color: #999; }
+
+/* --- Responsive --- */
+@media (max-width: 700px) {
+    .main { flex-direction: column; }
+    .editor-pane.split { border-right: none; border-bottom: 2px solid var(--border); max-height: 50vh; }
+}
+
+@media print {
+    .toolbar { display: none; }
+    .editor-pane { display: none; }
+    .preview-pane { border: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== TOOLBAR ===== -->
+<div class="toolbar">
+    <span class="filename" id="filename-display">untitled.md</span>
+    <div class="separator"></div>
+
+    <label for="file-input" title="Carica file .md nel server">Carica .md</label>
+    <input type="file" id="file-input" accept=".md,.markdown,.txt" onchange="uploadFile(this)">
+
+    <button onclick="downloadFile()" title="Scarica il documento corrente">Scarica .md</button>
+
+    <div class="separator"></div>
+
+    <select onchange="changeFontSize(this.value)" title="Dimensione font">
+        <option value="14">14px</option>
+        <option value="16" selected>16px</option>
+        <option value="18">18px</option>
+        <option value="20">20px</option>
+        <option value="24">24px</option>
+    </select>
+
+    <span class="status" id="status">
+        <span id="conn-status" class="disconnected">Connessione...</span>
+    </span>
+</div>
+
+<!-- ===== MAIN AREA ===== -->
+<div class="main">
+    <div class="editor-pane" id="editor-pane">
+        <div class="pane-header">
+            <span>Sorgente (input dal terminale server)</span>
+            <span class="cursor-info" id="cursor-info">Riga 1, Col 1</span>
+        </div>
+        <div class="editor-view" id="editor-view">
+            <div class="editor-line">
+                <span class="line-number">1</span>
+                <span class="line-content">&nbsp;</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="preview-pane" id="preview-pane">
+        <div class="pane-header">
+            <span>Anteprima Markdown</span>
+        </div>
+        <div id="preview"></div>
+    </div>
+</div>
+
+<!-- ===== JAVASCRIPT ===== -->
+<script>
+(function(){
+    "use strict";
+
+    const editorView  = document.getElementById("editor-view");
+    const editorPane  = document.getElementById("editor-pane");
+    const previewPane = document.getElementById("preview-pane");
+    const preview     = document.getElementById("preview");
+    const filenameEl  = document.getElementById("filename-display");
+    const cursorInfo  = document.getElementById("cursor-info");
+    const connStatus  = document.getElementById("conn-status");
+
+    let lastVersion  = -1;
+    let pollInterval = 300;  // ms - frequenza polling
+
+    // ------------------------------------------------------------------ //
+    //  Polling: chiede al server lo stato corrente del documento
+    // ------------------------------------------------------------------ //
+    function poll() {
+        fetch("/api/state?v=" + lastVersion)
+            .then(r => r.json())
+            .then(data => {
+                connStatus.textContent = "Connesso";
+                connStatus.className = "connected";
+
+                // Aggiorna solo se la versione e' cambiata
+                if (data.version !== lastVersion) {
+                    lastVersion = data.version;
+                    renderEditor(data.lines, data.cursor_row, data.cursor_col);
+                    filenameEl.textContent = data.filename +
+                        (data.saved ? "" : " [modificato]");
+                    cursorInfo.textContent =
+                        "Riga " + (data.cursor_row + 1) +
+                        ", Col " + (data.cursor_col + 1);
+
+                    // Toggle anteprima
+                    if (data.preview_mode) {
+                        previewPane.classList.add("visible");
+                        editorPane.classList.add("split");
+                        renderPreview(data.lines.join("\n"));
+                    } else {
+                        previewPane.classList.remove("visible");
+                        editorPane.classList.remove("split");
+                    }
+                }
+
+                setTimeout(poll, pollInterval);
+            })
+            .catch(() => {
+                connStatus.textContent = "Disconnesso";
+                connStatus.className = "disconnected";
+                setTimeout(poll, 2000);
+            });
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Renderizza l'editor read-only con numeri di riga e cursore
+    // ------------------------------------------------------------------ //
+    function renderEditor(lines, cursorRow, cursorCol) {
+        let html = "";
+        for (let i = 0; i < lines.length; i++) {
+            const isActive = (i === cursorRow);
+            const lineClass = isActive ? "editor-line active" : "editor-line";
+            const lineText = escapeHtml(lines[i]);
+
+            let content;
+            if (isActive) {
+                // Inserisci il blocco cursore
+                const before = escapeHtml(lines[i].substring(0, cursorCol));
+                const cursorChar = cursorCol < lines[i].length
+                    ? escapeHtml(lines[i][cursorCol])
+                    : " ";
+                const after = cursorCol < lines[i].length
+                    ? escapeHtml(lines[i].substring(cursorCol + 1))
+                    : "";
+                content = before +
+                    '<span class="cursor-block">' + cursorChar + '</span>' +
+                    after;
+            } else {
+                content = lineText || " ";
+            }
+
+            html += '<div class="' + lineClass + '">' +
+                '<span class="line-number">' + (i + 1) + '</span>' +
+                '<span class="line-content">' + content + '</span>' +
+                '</div>';
+        }
+        editorView.innerHTML = html;
+
+        // Auto-scroll alla riga attiva
+        const activeLine = editorView.querySelector(".editor-line.active");
+        if (activeLine) {
+            activeLine.scrollIntoView({ block: "nearest" });
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Renderizza anteprima Markdown (lato server)
+    // ------------------------------------------------------------------ //
+    function renderPreview(mdContent) {
+        fetch("/api/render", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: mdContent })
+        })
+        .then(r => r.json())
+        .then(data => { preview.innerHTML = data.html || ""; })
+        .catch(() => {});
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Upload file .md -> server
+    // ------------------------------------------------------------------ //
+    window.uploadFile = function(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        fetch("/api/upload", { method: "POST", body: formData })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { alert("Errore: " + data.error); return; }
+                lastVersion = -1;  // forza aggiornamento
+            })
+            .catch(err => alert("Errore upload: " + err));
+
+        input.value = "";
+    };
+
+    // ------------------------------------------------------------------ //
+    //  Download file .md dal server
+    // ------------------------------------------------------------------ //
+    window.downloadFile = function() {
+        fetch("/api/download")
+            .then(r => {
+                const cd = r.headers.get("Content-Disposition") || "";
+                return r.blob().then(blob => ({ blob, cd }));
+            })
+            .then(({ blob, cd }) => {
+                let name = "untitled.md";
+                const match = cd.match(/filename=(.+)/);
+                if (match) name = match[1].replace(/"/g, "");
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = name;
+                a.click();
+                URL.revokeObjectURL(url);
+            })
+            .catch(err => alert("Errore download: " + err));
+    };
+
+    // ------------------------------------------------------------------ //
+    //  Font size
+    // ------------------------------------------------------------------ //
+    window.changeFontSize = function(size) {
+        document.documentElement.style.setProperty("--font-size", size + "px");
+    };
+
+    // Start polling
+    poll();
+
+})();
+</script>
+</body>
+</html>
