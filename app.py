@@ -604,11 +604,13 @@ def keyboard_thread():
                         if row > 0:
                             doc["cursor_row"] = row - 1
                             doc["cursor_col"] = min(col, len(lines[row - 1]))
+                        doc["version"] += 1
 
                     elif key == "DOWN":
                         if row < len(lines) - 1:
                             doc["cursor_row"] = row + 1
                             doc["cursor_col"] = min(col, len(lines[row + 1]))
+                        doc["version"] += 1
 
                     elif key == "LEFT":
                         if col > 0:
@@ -616,6 +618,7 @@ def keyboard_thread():
                         elif row > 0:
                             doc["cursor_row"] = row - 1
                             doc["cursor_col"] = len(lines[row - 1])
+                        doc["version"] += 1
 
                     elif key == "RIGHT":
                         if col < len(lines[row]):
@@ -623,12 +626,15 @@ def keyboard_thread():
                         elif row < len(lines) - 1:
                             doc["cursor_row"] = row + 1
                             doc["cursor_col"] = 0
+                        doc["version"] += 1
 
                     elif key == "HOME":
                         doc["cursor_col"] = 0
+                        doc["version"] += 1
 
                     elif key == "END":
                         doc["cursor_col"] = len(lines[row])
+                        doc["version"] += 1
 
                 else:
                     # Carattere normale -> inserisci
