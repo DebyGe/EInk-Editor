@@ -24,9 +24,11 @@ Comandi speciali nel terminale:
 
 import os
 import sys
+import logging
 import threading
 import tempfile
 import time
+from collections import deque
 from datetime import datetime
 
 # Input da tastiera cross-platform
@@ -48,6 +50,61 @@ import markdown
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max upload
+
+# --------------------------------------------------------------------------- #
+#  Logging: Werkzeug su file rotante (ultimi 20 messaggi), non sul terminale
+# --------------------------------------------------------------------------- #
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.log")
+MAX_LOG_LINES = 20
+
+
+class RotatingDequeHandler(logging.Handler):
+    """Handler che scrive su file mantenendo solo le ultime N righe."""
+
+    def __init__(self, filepath, maxlines=20):
+        super().__init__()
+        self.filepath = filepath
+        self.maxlines = maxlines
+        self._buffer = deque(maxlen=maxlines)
+        # Carica righe esistenti se il file c'e' gia'
+        if os.path.isfile(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    for line in f:
+                        self._buffer.append(line.rstrip("\n"))
+            except Exception:
+                pass
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self._buffer.append(msg)
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                f.write("\n".join(self._buffer) + "\n")
+        except Exception:
+            self.handleError(record)
+
+
+def _setup_logging():
+    """Redirige i log di Werkzeug e Flask su file, silenziando il terminale."""
+    # Handler rotante su file
+    handler = RotatingDequeHandler(LOG_FILE, maxlines=MAX_LOG_LINES)
+    handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s",
+                                           datefmt="%Y-%m-%d %H:%M:%S"))
+
+    # Werkzeug (le righe "GET /api/state ...")
+    wlog = logging.getLogger("werkzeug")
+    wlog.handlers.clear()
+    wlog.addHandler(handler)
+    wlog.setLevel(logging.INFO)
+
+    # Flask app logger
+    app.logger.handlers.clear()
+    app.logger.addHandler(handler)
+    app.logger.setLevel(logging.INFO)
+
+
+_setup_logging()
 
 # --------------------------------------------------------------------------- #
 #  Stato globale del documento
