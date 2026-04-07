@@ -7,13 +7,14 @@ ARCHITETTURA:
     Un thread dedicato cattura i tasti dalla console e costruisce il documento.
   - Il BROWSER (display e-ink) e' solo un VISUALIZZATORE read-only.
     Fa polling per ricevere il contenuto aggiornato e mostrarlo.
-  - Upload/download di file .md avviene dal browser.
+  - Salvataggio e caricamento file .md avvengono su disco lato server.
   - Anteprima Markdown renderizzata nel browser.
 
 Comandi speciali nel terminale:
   Ctrl+S       -> salva su disco
   Ctrl+O       -> carica file da disco (prompt nel terminale)
   Ctrl+N       -> nuovo documento
+  Ctrl+R       -> rinomina file (prompt nel terminale)
   Ctrl+Q       -> esci
   Ctrl+P       -> toggle anteprima nel browser
   Backspace    -> cancella carattere
@@ -26,7 +27,6 @@ import os
 import sys
 import logging
 import threading
-import tempfile
 import time
 from collections import deque
 from datetime import datetime
@@ -43,13 +43,18 @@ from flask import (
     render_template,
     request,
     jsonify,
-    send_file,
-    Response,
 )
 import markdown
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max upload
+
+# --------------------------------------------------------------------------- #
+#  Directory documenti: dove vengono salvati e caricati i file .md
+# --------------------------------------------------------------------------- #
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DOCS_DIR = os.path.join(BASE_DIR, "documents")
+os.makedirs(DOCS_DIR, exist_ok=True)
 
 # --------------------------------------------------------------------------- #
 #  Logging: Werkzeug su file rotante (ultimi 20 messaggi), non sul terminale
@@ -157,8 +162,8 @@ def render_terminal():
     print(f"  Riga {doc['cursor_row']+1}/{len(doc['lines'])}"
           f"  Col {doc['cursor_col']+1}")
     print("-" * 60)
-    print("  Ctrl+S=Salva  Ctrl+O=Apri  Ctrl+N=Nuovo  Ctrl+Q=Esci")
-    print("  Ctrl+P=Toggle anteprima browser")
+    print("  Ctrl+S=Salva  Ctrl+O=Apri  Ctrl+N=Nuovo  Ctrl+R=Rinomina")
+    print("  Ctrl+P=Anteprima  Ctrl+Q=Esci")
     print("=" * 60)
 
     # Mostra le righe con indicatore cursore
@@ -210,6 +215,8 @@ def read_key_windows():
         return "CTRL_Q", True
     if ch == "\x10":  # Ctrl+P
         return "CTRL_P", True
+    if ch == "\x12":  # Ctrl+R
+        return "CTRL_R", True
 
     # Backspace
     if ch == "\x08":
@@ -268,6 +275,8 @@ def read_key_unix():
         return "CTRL_Q", True
     if ch == "\x10":
         return "CTRL_P", True
+    if ch == "\x12":
+        return "CTRL_R", True
 
     if ch == "\x7f" or ch == "\x08":
         return "BACKSPACE", True
@@ -300,56 +309,91 @@ def read_key_unix():
     return ch, False
 
 
-def save_to_disk():
-    """Salva il documento su disco."""
+def save_to_disk(filename=None):
+    """Salva il documento su disco nella cartella documents/."""
     content = get_content()
-    filename = doc["filename"]
+    if filename is None:
+        filename = doc["filename"]
+    # Assicura estensione .md
+    if not filename.endswith(".md"):
+        filename += ".md"
+    filepath = os.path.join(DOCS_DIR, os.path.basename(filename))
     try:
-        with open(filename, "w", encoding="utf-8") as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
         with doc_lock:
+            doc["filename"] = os.path.basename(filename)
             doc["saved"] = True
-            doc["status_msg"] = f"Salvato: {filename} ({len(content)} car.)"
+            doc["version"] += 1
+            doc["status_msg"] = f"Salvato: {filepath} ({len(content)} car.)"
     except Exception as e:
         with doc_lock:
             doc["status_msg"] = f"Errore salvataggio: {e}"
 
 
-def load_from_disk():
-    """Carica un file da disco (prompt nel terminale)."""
-    clear_terminal()
-    print("=" * 60)
-    print("  Carica file Markdown")
-    print("=" * 60)
+def load_from_disk(filepath=None):
+    """Carica un file da disco. Se filepath e' None, chiede nel terminale."""
+    if filepath is None:
+        # Prompt interattivo nel terminale
+        clear_terminal()
+        print("=" * 60)
+        print("  Carica file Markdown")
+        print("  Directory:", DOCS_DIR)
+        print("-" * 60)
+        # Mostra file disponibili
+        files = sorted(f for f in os.listdir(DOCS_DIR)
+                       if f.endswith((".md", ".markdown", ".txt")))
+        if files:
+            for i, f in enumerate(files, 1):
+                print(f"  {i}. {f}")
+        else:
+            print("  (nessun file trovato)")
+        print("=" * 60)
+        try:
+            choice = input("  Nome file o numero: ").strip()
+        except EOFError:
+            return
+        if not choice:
+            with doc_lock:
+                doc["status_msg"] = "Caricamento annullato"
+            return
+        # Se e' un numero, seleziona dalla lista
+        if choice.isdigit() and files:
+            idx = int(choice) - 1
+            if 0 <= idx < len(files):
+                filepath = os.path.join(DOCS_DIR, files[idx])
+            else:
+                with doc_lock:
+                    doc["status_msg"] = f"Indice non valido: {choice}"
+                return
+        else:
+            # Prova prima nella cartella documents, poi come percorso assoluto
+            candidate = os.path.join(DOCS_DIR, choice)
+            if os.path.isfile(candidate):
+                filepath = candidate
+            elif os.path.isfile(choice):
+                filepath = choice
+            else:
+                with doc_lock:
+                    doc["status_msg"] = f"File non trovato: {choice}"
+                return
+    else:
+        # filepath fornito direttamente (es. dalla API)
+        if not os.path.isfile(filepath):
+            return False
 
-    # Su Windows serve input() standard per leggere percorso file
-    # Temporaneamente usiamo input bloccante
     try:
-        path = input("  Percorso file: ").strip()
-    except EOFError:
-        return
-
-    if not path:
-        with doc_lock:
-            doc["status_msg"] = "Caricamento annullato"
-        return
-
-    if not os.path.isfile(path):
-        with doc_lock:
-            doc["status_msg"] = f"File non trovato: {path}"
-        return
-
-    try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
     except UnicodeDecodeError:
-        with open(path, "r", encoding="latin-1") as f:
+        with open(filepath, "r", encoding="latin-1") as f:
             content = f.read()
 
-    set_content(content, filename=os.path.basename(path))
+    set_content(content, filename=os.path.basename(filepath))
     with doc_lock:
         doc["saved"] = True
-        doc["status_msg"] = f"Caricato: {path}"
+        doc["status_msg"] = f"Caricato: {os.path.basename(filepath)}"
+    return True
 
 
 def new_document():
@@ -361,6 +405,62 @@ def new_document():
         doc["cursor_col"] = 0
         doc["saved"] = True
         doc["status_msg"] = "Nuovo documento"
+
+
+def rename_file():
+    """Rinomina il file corrente. Prompt interattivo nel terminale."""
+    clear_terminal()
+    print("=" * 60)
+    print("  Rinomina file")
+    print(f"  Nome attuale: {doc['filename']}")
+    print("-" * 60)
+    print("  Inserisci il nuovo nome (vuoto = annulla)")
+    print("  L'estensione .md viene aggiunta automaticamente")
+    print("=" * 60)
+    try:
+        new_name = input("  Nuovo nome: ").strip()
+    except EOFError:
+        return
+
+    if not new_name:
+        with doc_lock:
+            doc["status_msg"] = "Rinomina annullata"
+        return
+
+    # Assicura estensione .md
+    if not new_name.endswith(".md"):
+        new_name += ".md"
+
+    # Sicurezza: solo il nome del file, niente percorsi
+    new_name = os.path.basename(new_name)
+
+    old_name = doc["filename"]
+    old_path = os.path.join(DOCS_DIR, old_name)
+    new_path = os.path.join(DOCS_DIR, new_name)
+
+    # Controlla se esiste gia' un file con il nuovo nome
+    if os.path.isfile(new_path) and new_name != old_name:
+        with doc_lock:
+            doc["status_msg"] = f"Errore: '{new_name}' esiste gia'"
+        return
+
+    # Se il file vecchio esiste su disco, rinominalo
+    if os.path.isfile(old_path):
+        try:
+            os.rename(old_path, new_path)
+            with doc_lock:
+                doc["filename"] = new_name
+                doc["version"] += 1
+                doc["status_msg"] = f"Rinominato: {old_name} -> {new_name}"
+        except Exception as e:
+            with doc_lock:
+                doc["status_msg"] = f"Errore rinomina: {e}"
+    else:
+        # Il file non era ancora salvato su disco, cambia solo il nome in memoria
+        with doc_lock:
+            doc["filename"] = new_name
+            doc["version"] += 1
+            doc["status_msg"] = f"Nome cambiato: {new_name}"
 
 
 def keyboard_thread():
@@ -416,6 +516,19 @@ def keyboard_thread():
                         doc_lock.release()
                         new_document()
                         doc_lock.acquire()
+
+                    elif key == "CTRL_R":
+                        doc_lock.release()
+                        try:
+                            if sys.platform != "win32" and old_settings:
+                                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                            rename_file()
+                            if sys.platform != "win32":
+                                tty.setraw(sys.stdin.fileno())
+                        finally:
+                            doc_lock.acquire()
+                        render_terminal()
+                        continue
 
                     elif key == "CTRL_P":
                         doc["preview_mode"] = not doc["preview_mode"]
@@ -548,52 +661,50 @@ def render_md():
     return jsonify({"html": html})
 
 
-@app.route("/api/upload", methods=["POST"])
-def upload():
-    """Riceve un file .md dal browser e lo carica nel documento."""
-    if "file" not in request.files:
-        return jsonify({"error": "Nessun file ricevuto"}), 400
-
-    f = request.files["file"]
-    if f.filename == "":
-        return jsonify({"error": "Nome file vuoto"}), 400
-
-    try:
-        content = f.read().decode("utf-8")
-    except UnicodeDecodeError:
-        f.seek(0)
-        try:
-            content = f.read().decode("latin-1")
-        except Exception:
-            return jsonify({"error": "Impossibile decodificare il file"}), 400
-
-    filename = f.filename or "uploaded.md"
-    set_content(content, filename=filename)
-    with doc_lock:
-        doc["saved"] = True
-        doc["status_msg"] = f"Caricato dal browser: {filename}"
-
-    return jsonify({"ok": True, "filename": filename})
+@app.route("/api/files")
+def list_files():
+    """Restituisce la lista dei file .md disponibili nella cartella documents/."""
+    files = []
+    for f in sorted(os.listdir(DOCS_DIR)):
+        if f.lower().endswith((".md", ".markdown", ".txt")):
+            filepath = os.path.join(DOCS_DIR, f)
+            stat = os.stat(filepath)
+            files.append({
+                "name": f,
+                "size": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            })
+    return jsonify({"files": files, "directory": DOCS_DIR})
 
 
-@app.route("/api/download")
-def download():
-    """Invia il documento corrente come file .md al browser."""
-    content = get_content()
-    filename = doc["filename"]
+@app.route("/api/save", methods=["POST"])
+def save():
+    """Salva il documento corrente su disco nel server (cartella documents/)."""
+    data = request.get_json(silent=True) or {}
+    filename = data.get("filename", doc["filename"])
+    # Assicura estensione .md
+    if not filename.endswith(".md"):
+        filename += ".md"
+    save_to_disk(filename=filename)
+    return jsonify({"ok": True, "filename": doc["filename"]})
 
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".md", delete=False, encoding="utf-8"
-    )
-    tmp.write(content)
-    tmp.close()
 
-    return send_file(
-        tmp.name,
-        as_attachment=True,
-        download_name=filename,
-        mimetype="text/markdown",
-    )
+@app.route("/api/load", methods=["POST"])
+def load():
+    """Carica un file .md dal disco del server nel documento corrente."""
+    data = request.get_json(silent=True) or {}
+    filename = data.get("filename", "")
+    if not filename:
+        return jsonify({"error": "Nome file mancante"}), 400
+    # Sicurezza: solo il nome del file, niente percorsi relativi
+    safe_name = os.path.basename(filename)
+    filepath = os.path.join(DOCS_DIR, safe_name)
+    if not os.path.isfile(filepath):
+        return jsonify({"error": f"File non trovato: {safe_name}"}), 404
+    result = load_from_disk(filepath)
+    if result:
+        return jsonify({"ok": True, "filename": safe_name})
+    return jsonify({"error": "Impossibile caricare il file"}), 500
 
 
 # --------------------------------------------------------------------------- #

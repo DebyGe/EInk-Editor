@@ -96,6 +96,82 @@ body {
 
 #file-input { display: none; }
 
+/* --- File list overlay --- */
+.file-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 100;
+}
+
+.file-overlay.visible {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.file-dialog {
+    background: var(--bg);
+    border: 3px solid var(--border);
+    padding: 16px;
+    min-width: 350px;
+    max-width: 500px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.file-dialog h3 {
+    margin-bottom: 12px;
+    font-size: 1.1em;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 6px;
+}
+
+.file-dialog .file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--light);
+    cursor: pointer;
+    font-family: var(--font-editor);
+    font-size: 14px;
+}
+
+.file-dialog .file-item:hover {
+    background: #f0f0f0;
+}
+
+.file-dialog .file-item .file-size {
+    color: var(--mid);
+    font-size: 12px;
+    margin-left: 12px;
+    white-space: nowrap;
+}
+
+.file-dialog .file-empty {
+    color: var(--mid);
+    font-style: italic;
+    padding: 12px 6px;
+}
+
+.file-dialog .dialog-buttons {
+    margin-top: 12px;
+    text-align: right;
+}
+
+.file-dialog .dialog-buttons button {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    padding: 6px 14px;
+    border: 2px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    cursor: pointer;
+    font-weight: bold;
+}
+
 /* --- Main area --- */
 .main {
     flex: 1;
@@ -259,10 +335,8 @@ body {
     <span class="filename" id="filename-display">untitled.md</span>
     <div class="separator"></div>
 
-    <label for="file-input" title="Carica file .md nel server">Carica .md</label>
-    <input type="file" id="file-input" accept=".md,.markdown,.txt" onchange="uploadFile(this)">
-
-    <button onclick="downloadFile()" title="Scarica il documento corrente">Scarica .md</button>
+    <button onclick="saveFile()" title="Salva sul server">Salva</button>
+    <button onclick="showOpenDialog()" title="Apri file dal server">Apri</button>
 
     <div class="separator"></div>
 
@@ -277,6 +351,19 @@ body {
     <span class="status" id="status">
         <span id="conn-status" class="disconnected">Connessione...</span>
     </span>
+</div>
+
+<!-- ===== FILE DIALOG (Apri) ===== -->
+<div class="file-overlay" id="file-overlay" onclick="closeDialog(event)">
+    <div class="file-dialog" id="file-dialog">
+        <h3>Apri file dal server</h3>
+        <div id="file-list">
+            <div class="file-empty">Caricamento...</div>
+        </div>
+        <div class="dialog-buttons">
+            <button onclick="closeOpenDialog()">Chiudi</button>
+        </div>
+    </div>
 </div>
 
 <!-- ===== MAIN AREA ===== -->
@@ -420,47 +507,83 @@ body {
     }
 
     // ------------------------------------------------------------------ //
-    //  Upload file .md -> server
+    //  Salva documento sul server
     // ------------------------------------------------------------------ //
-    window.uploadFile = function(input) {
-        const file = input.files[0];
-        if (!file) return;
+    window.saveFile = function() {
+        const name = prompt("Nome del file:", filenameEl.textContent.replace(" [modificato]", ""));
+        if (!name) return;
+        const finalName = name.endsWith(".md") ? name : name + ".md";
 
-        const formData = new FormData();
-        formData.append("file", file);
-
-        fetch("/api/upload", { method: "POST", body: formData })
-            .then(r => r.json())
-            .then(data => {
-                if (data.error) { alert("Errore: " + data.error); return; }
-                lastVersion = -1;  // forza aggiornamento
-            })
-            .catch(err => alert("Errore upload: " + err));
-
-        input.value = "";
+        fetch("/api/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: finalName })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { alert("Errore: " + data.error); return; }
+            lastVersion = -1;  // forza aggiornamento
+        })
+        .catch(err => alert("Errore salvataggio: " + err));
     };
 
     // ------------------------------------------------------------------ //
-    //  Download file .md dal server
+    //  Apri file dal server (dialog con lista file)
     // ------------------------------------------------------------------ //
-    window.downloadFile = function() {
-        fetch("/api/download")
-            .then(r => {
-                const cd = r.headers.get("Content-Disposition") || "";
-                return r.blob().then(blob => ({ blob, cd }));
+    const fileOverlay = document.getElementById("file-overlay");
+    const fileListEl  = document.getElementById("file-list");
+
+    window.showOpenDialog = function() {
+        fileOverlay.classList.add("visible");
+        fileListEl.innerHTML = '<div class="file-empty">Caricamento...</div>';
+
+        fetch("/api/files")
+            .then(r => r.json())
+            .then(data => {
+                if (!data.files || data.files.length === 0) {
+                    fileListEl.innerHTML = '<div class="file-empty">Nessun file .md nella cartella documents/</div>';
+                    return;
+                }
+                let html = "";
+                for (const f of data.files) {
+                    const sizeKb = (f.size / 1024).toFixed(1);
+                    html += '<div class="file-item" onclick="loadFile(\'' +
+                        escapeHtml(f.name).replace(/'/g, "\\'") + '\')">' +
+                        '<span>' + escapeHtml(f.name) + '</span>' +
+                        '<span class="file-size">' + sizeKb + ' KB</span>' +
+                        '</div>';
+                }
+                fileListEl.innerHTML = html;
             })
-            .then(({ blob, cd }) => {
-                let name = "untitled.md";
-                const match = cd.match(/filename=(.+)/);
-                if (match) name = match[1].replace(/"/g, "");
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = name;
-                a.click();
-                URL.revokeObjectURL(url);
-            })
-            .catch(err => alert("Errore download: " + err));
+            .catch(() => {
+                fileListEl.innerHTML = '<div class="file-empty">Errore di connessione</div>';
+            });
+    };
+
+    window.closeOpenDialog = function() {
+        fileOverlay.classList.remove("visible");
+    };
+
+    window.closeDialog = function(event) {
+        // Chiudi se si clicca fuori dal dialog
+        if (event.target === fileOverlay) {
+            closeOpenDialog();
+        }
+    };
+
+    window.loadFile = function(filename) {
+        fetch("/api/load", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: filename })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { alert("Errore: " + data.error); return; }
+            lastVersion = -1;  // forza aggiornamento
+            closeOpenDialog();
+        })
+        .catch(err => alert("Errore caricamento: " + err));
     };
 
     // ------------------------------------------------------------------ //
