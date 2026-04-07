@@ -127,6 +127,27 @@ doc = {
 }
 doc_lock = threading.Lock()
 
+# Tracciamento battute al secondo (KPS)
+KPS_WINDOW = 5  # finestra di secondi per il calcolo
+_keystroke_times = deque()  # timestamp dei tasti premuti (solo editing)
+
+
+def record_keystroke():
+    """Registra il timestamp di una battuta."""
+    _keystroke_times.append(time.time())
+
+
+def get_kps():
+    """Calcola le battute al secondo nella finestra temporale."""
+    now = time.time()
+    # Rimuovi battute fuori dalla finestra
+    while _keystroke_times and _keystroke_times[0] < now - KPS_WINDOW:
+        _keystroke_times.popleft()
+    count = len(_keystroke_times)
+    if count == 0:
+        return 0.0
+    return round(count / KPS_WINDOW, 1)
+
 
 def get_content():
     """Restituisce il contenuto completo come stringa."""
@@ -549,6 +570,7 @@ def keyboard_thread():
                             doc["cursor_col"] = prev_len
                         doc["version"] += 1
                         doc["saved"] = False
+                        record_keystroke()
 
                     elif key == "DELETE":
                         if col < len(lines[row]):
@@ -558,6 +580,7 @@ def keyboard_thread():
                             lines.pop(row + 1)
                         doc["version"] += 1
                         doc["saved"] = False
+                        record_keystroke()
 
                     elif key == "ENTER":
                         # Spezza la riga
@@ -568,12 +591,14 @@ def keyboard_thread():
                         doc["cursor_col"] = 0
                         doc["version"] += 1
                         doc["saved"] = False
+                        record_keystroke()
 
                     elif key == "TAB":
                         lines[row] = lines[row][:col] + "    " + lines[row][col:]
                         doc["cursor_col"] = col + 4
                         doc["version"] += 1
                         doc["saved"] = False
+                        record_keystroke()
 
                     elif key == "UP":
                         if row > 0:
@@ -611,6 +636,7 @@ def keyboard_thread():
                     doc["cursor_col"] = col + len(key)
                     doc["version"] += 1
                     doc["saved"] = False
+                    record_keystroke()
 
             if needs_redraw:
                 render_terminal()
@@ -646,6 +672,7 @@ def state():
             "version":      doc["version"],
             "preview_mode": doc["preview_mode"],
             "saved":        doc["saved"],
+            "kps":          get_kps(),
         })
 
 

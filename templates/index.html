@@ -92,6 +92,21 @@ body {
     color: var(--mid);
     padding: 4px 8px;
     margin-left: auto;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.kps-display {
+    font-family: var(--font-editor);
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--fg);
+    padding: 4px 10px;
+    border: 2px solid var(--border);
+    min-width: 80px;
+    text-align: center;
+    letter-spacing: 0.5px;
 }
 
 #file-input { display: none; }
@@ -349,6 +364,7 @@ body {
     </select>
 
     <span class="status" id="status">
+        <span class="kps-display" id="kps-display" title="Battute al secondo">0.0 b/s</span>
         <span id="conn-status" class="disconnected">Connessione...</span>
     </span>
 </div>
@@ -401,6 +417,7 @@ body {
     const filenameEl  = document.getElementById("filename-display");
     const cursorInfo  = document.getElementById("cursor-info");
     const connStatus  = document.getElementById("conn-status");
+    const kpsDisplay  = document.getElementById("kps-display");
 
     let lastVersion  = -1;
     let pollInterval = 300;  // ms - frequenza polling
@@ -414,6 +431,9 @@ body {
             .then(data => {
                 connStatus.textContent = "Connesso";
                 connStatus.className = "connected";
+
+                // KPS si aggiorna sempre (anche quando non si digita)
+                kpsDisplay.textContent = (data.kps || 0).toFixed(1) + " b/s";
 
                 // Aggiorna solo se la versione e' cambiata
                 if (data.version !== lastVersion) {
