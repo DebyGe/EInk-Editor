@@ -28,6 +28,7 @@ import sys
 import logging
 import threading
 import time
+import socket
 from collections import deque
 from datetime import datetime
 
@@ -62,6 +63,12 @@ os.makedirs(DOCS_DIR, exist_ok=True)
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.log")
 MAX_LOG_LINES = 20
 
+# Ottieni l'IP locale della macchina
+try:
+    hostname = socket.gethostname()
+    ip_locale = socket.gethostbyname(hostname)
+except Exception:
+    ip_locale = "127.0.0.1"
 
 class RotatingDequeHandler(logging.Handler):
     """Handler che scrive su file mantenendo solo le ultime N righe."""
@@ -124,6 +131,7 @@ doc = {
     "running": True,         # flag per terminare il thread
     "status_msg": "",        # messaggio di stato per il terminale
     "saved": True,           # documento salvato?
+    "visible_lines": 10,     # numero di righe visibili nell'editor (configurabile)
 }
 doc_lock = threading.Lock()
 
@@ -175,44 +183,84 @@ def clear_terminal():
 
 
 def render_terminal():
-    """Ridisegna il terminale con il contenuto e il cursore."""
+    """Ridisegna il terminale con interfaccia retrò stile anni 80."""
     clear_terminal()
-    print("=" * 60)
-    print(f"  EInk Editor  |  {doc['filename']}"
-          f"{'  [modificato]' if not doc['saved'] else ''}")
-    print(f"  Riga {doc['cursor_row']+1}/{len(doc['lines'])}"
-          f"  Col {doc['cursor_col']+1}")
-    print("-" * 60)
-    print("  Ctrl+S=Salva  Ctrl+O=Apri  Ctrl+N=Nuovo  Ctrl+R=Rinomina")
-    print("  Ctrl+P=Anteprima  Ctrl+Q=Esci")
-    print("=" * 60)
-
-    # Mostra le righe con indicatore cursore
+    
+    width = 80  # larghezza totale dell'interfaccia
+    visible = doc["visible_lines"]  # numero di righe visibili
+    
+    # === MENU IN TESTA ===
+    menu = f"http://{ip_locale}:5000 - EInk Editor"
+    filename_label = f"File Name: {doc['filename']}"
+    menu_line = menu + " " * (width - len(menu) - len(filename_label)) + filename_label
+    print(menu_line)
+    
+    # === BORDO SUPERIORE ===
+    print("|" + "-" * (width - 2) + "|")
+    
+    # === AREA EDITOR CON SCROLL ===
     total = len(doc["lines"])
     # Finestra di righe visibili attorno al cursore
-    visible = 20
     start = max(0, doc["cursor_row"] - visible // 2)
     end = min(total, start + visible)
     if end - start < visible:
         start = max(0, end - visible)
-
-    for i in range(start, end):
-        line = doc["lines"][i]
-        prefix = ">" if i == doc["cursor_row"] else " "
-        line_num = f"{i+1:4d}"
-        # Mostra cursore nella riga corrente
-        if i == doc["cursor_row"]:
-            col = doc["cursor_col"]
-            char_at = line[col] if col < len(line) else " "
-            display = line[:col] + "[" + char_at + "]" + line[col+1:]  # cursore
+    
+    # Riempie le righe fino a 'visible' linee
+    displayed_lines = list(range(start, end))
+    while len(displayed_lines) < visible:
+        if end < total:
+            displayed_lines.append(end)
+            end += 1
         else:
-            display = line
-        print(f" {prefix} {line_num} | {display}")
-
+            displayed_lines.append(-1)  # linea vuota
+    
+    for line_idx in displayed_lines[:visible]:
+        if line_idx == -1:
+            # Linea vuota
+            display = ""
+        else:
+            line = doc["lines"][line_idx]
+            line_num = f"{line_idx+1:3d}"
+            
+            # Mostra cursore nella riga corrente
+            if line_idx == doc["cursor_row"]:
+                col = doc["cursor_col"]
+                char_at = line[col] if col < len(line) else " "
+                display_content = line[:col] + "[" + char_at + "]" + line[col+1:]  # cursore
+            else:
+                display_content = line
+            
+            # Limita la larghezza della riga visualizzata
+            max_content_width = width - 8  # 3 cifre + 2 spazi + | + | + |
+            if len(display_content) > max_content_width:
+                display_content = display_content[:max_content_width]
+            
+            display = f" {line_num} | {display_content}"
+        
+        # Riempie il resto della riga con spazi
+        display = display.ljust(width - 1)
+        print("|" + display + "|")
+    
+    # === BORDO INFERIORE ===
+    print("|" + "-" * (width - 2) + "|")
+    
+    # === BARRA DI STATO ===
+    saved_indicator = "" if doc['saved'] else "*"
+    status_left = f"Riga {doc['cursor_row']+1}/{total} Col {doc['cursor_col']+1} {saved_indicator}"
+    
     if doc["status_msg"]:
-        print()
-        print(f"  [{doc['status_msg']}]")
+        status_right = f"[ {doc['status_msg']} ]"
         doc["status_msg"] = ""
+    else:
+        status_right = ""
+    
+    status_line = status_left + " " * (width - len(status_left) - len(status_right)) + status_right
+    print(status_line)
+    
+    # === INFO COMANDI ===
+    help_line = "Ctrl+S=Save  Ctrl+O=Open  Ctrl+N=New  Ctrl+R=Rename  Ctrl+P=Preview  Ctrl+Q=Quit"
+    print(help_line)
 
 
 # --------------------------------------------------------------------------- #
@@ -746,8 +794,9 @@ def load():
 if __name__ == "__main__":
     print("=" * 60)
     print("  EInk Editor")
-    print("  Browser: http://localhost:5000 (solo visualizzazione)")
-    print("  Input:   digita in questo terminale")
+    print("  Browser (localhost): http://localhost:5000")
+    print(f"  Browser (IP):        http://{ip_locale}:5000")
+    print("  Input:               digita in questo terminale")
     print("=" * 60)
     print("  Avvio server Flask...")
     print()
