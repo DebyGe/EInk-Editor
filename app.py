@@ -11,7 +11,7 @@ ARCHITETTURA:
   - Anteprima Markdown renderizzata nel browser.
 
 Comandi speciali nel terminale:
-  Ctrl+S       -> salva su disco
+  Ctrl+W       -> salva su disco
   Ctrl+O       -> carica file da disco (prompt nel terminale)
   Ctrl+N       -> nuovo documento
   Ctrl+R       -> rinomina file (prompt nel terminale)
@@ -258,7 +258,7 @@ def render_terminal():
     print(status_line)
     
     # === INFO COMANDI ===
-    help_line = "Ctrl+S=Save  Ctrl+O=Open  Ctrl+N=New  Ctrl+R=Rename  Ctrl+P=Preview  Ctrl+Q=Quit"
+    help_line = "Ctrl+W=Save  Ctrl+O=Open  Ctrl+N=New  Ctrl+R=Rename  Ctrl+P=Preview  Ctrl+Q=Quit"
     print(help_line)
 
 
@@ -273,7 +273,7 @@ def read_key_windows():
     ch = msvcrt.getwch()
 
     # Ctrl+combinations
-    if ch == "\x17":  # Ctrl+S
+    if ch == "\x17":  # Ctrl+W
         return "CTRL_W", True
     if ch == "\x0f":  # Ctrl+O
         return "CTRL_O", True
