@@ -231,7 +231,7 @@ def render_terminal():
                 display_content = line
             
             # Limita la larghezza della riga visualizzata
-            max_content_width = width - 8  # 3 cifre + 2 spazi + | + | + |
+            max_content_width = width - 9  # 3 cifre + 2 spazi + | + | + |
             if len(display_content) > max_content_width:
                 display_content = display_content[:max_content_width]
             
