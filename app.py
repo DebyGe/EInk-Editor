@@ -131,7 +131,7 @@ doc = {
     "running": True,         # flag per terminare il thread
     "status_msg": "",        # messaggio di stato per il terminale
     "saved": True,           # documento salvato?
-    "visible_lines": 3,     # numero di righe visibili nell'editor (configurabile)
+    "visible_lines": 5,     # numero di righe visibili nell'editor (configurabile)
 }
 doc_lock = threading.Lock()
 
@@ -238,7 +238,7 @@ def render_terminal():
             display = f" {line_num} | {display_content}"
         
         # Riempie il resto della riga con spazi
-        display = display.ljust(width - 1)
+        display = display.ljust(width - 2)
         print("|" + display + "|")
     
     # === BORDO INFERIORE ===
