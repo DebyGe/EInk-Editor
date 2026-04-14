@@ -131,7 +131,7 @@ doc = {
     "running": True,         # flag per terminare il thread
     "status_msg": "",        # messaggio di stato per il terminale
     "saved": True,           # documento salvato?
-    "visible_lines": 10,     # numero di righe visibili nell'editor (configurabile)
+    "visible_lines": 3,     # numero di righe visibili nell'editor (configurabile)
 }
 doc_lock = threading.Lock()
 
@@ -252,7 +252,7 @@ def render_terminal():
         status_right = f"[ {doc['status_msg']} ]"
         doc["status_msg"] = ""
     else:
-        status_right = ""
+        status_right = doc["filename"]
     
     status_line = status_left + " " * (width - len(status_left) - len(status_right)) + status_right
     print(status_line)
@@ -393,7 +393,7 @@ def save_to_disk(filename=None):
             doc["filename"] = os.path.basename(filename)
             doc["saved"] = True
             doc["version"] += 1
-            doc["status_msg"] = f"Salvato: {filepath} ({len(content)} car.)"
+            doc["status_msg"] = f"Salvato: {filename} ({len(content)} car.)"
     except Exception as e:
         with doc_lock:
             doc["status_msg"] = f"Errore salvataggio: {e}"
