@@ -191,8 +191,7 @@ def render_terminal():
     
     # === MENU IN TESTA ===
     menu = f"http://{ip_locale}:5000 - EInk Editor"
-    filename_label = f"File Name: {doc['filename']}"
-    menu_line = menu + " " * (width - len(menu) - len(filename_label)) + filename_label
+    menu_line = menu
     print(menu_line)
     
     # === BORDO SUPERIORE ===
@@ -274,8 +273,8 @@ def read_key_windows():
     ch = msvcrt.getwch()
 
     # Ctrl+combinations
-    if ch == "\x13":  # Ctrl+S
-        return "CTRL_S", True
+    if ch == "\x17":  # Ctrl+S
+        return "CTRL_W", True
     if ch == "\x0f":  # Ctrl+O
         return "CTRL_O", True
     if ch == "\x0e":  # Ctrl+N
@@ -334,8 +333,8 @@ def read_key_unix():
 
     ch = sys.stdin.read(1)
 
-    if ch == "\x13":
-        return "CTRL_S", True
+    if ch == "\x17":
+        return "CTRL_W", True
     if ch == "\x0f":
         return "CTRL_O", True
     if ch == "\x0e":
@@ -562,7 +561,7 @@ def keyboard_thread():
                         doc["running"] = False
                         break
 
-                    elif key == "CTRL_S":
+                    elif key == "CTRL_W":
                         # Salva in un thread separato per non bloccare
                         needs_redraw = False
                         threading.Thread(target=_save_and_redraw, daemon=True).start()
