@@ -350,11 +350,6 @@ body {
     <span class="filename" id="filename-display">untitled.md</span>
     <div class="separator"></div>
 
-    <button onclick="saveFile()" title="Salva sul server">Salva</button>
-    <button onclick="showOpenDialog()" title="Apri file dal server">Apri</button>
-
-    <div class="separator"></div>
-
     <select onchange="changeFontSize(this.value)" title="Dimensione font">
         <option value="14">14px</option>
         <option value="16" selected>16px</option>
@@ -367,19 +362,6 @@ body {
         <span class="kps-display" id="kps-display" title="Battute al secondo">0.0 b/s</span>
         <span id="conn-status" class="disconnected">Connessione...</span>
     </span>
-</div>
-
-<!-- ===== FILE DIALOG (Apri) ===== -->
-<div class="file-overlay" id="file-overlay" onclick="closeDialog(event)">
-    <div class="file-dialog" id="file-dialog">
-        <h3>Apri file dal server</h3>
-        <div id="file-list">
-            <div class="file-empty">Caricamento...</div>
-        </div>
-        <div class="dialog-buttons">
-            <button onclick="closeOpenDialog()">Chiudi</button>
-        </div>
-    </div>
 </div>
 
 <!-- ===== MAIN AREA ===== -->
@@ -526,85 +508,7 @@ body {
         .catch(() => {});
     }
 
-    // ------------------------------------------------------------------ //
-    //  Salva documento sul server
-    // ------------------------------------------------------------------ //
-    window.saveFile = function() {
-        const name = prompt("Nome del file:", filenameEl.textContent.replace(" [modificato]", ""));
-        if (!name) return;
-        const finalName = name.endsWith(".md") ? name : name + ".md";
 
-        fetch("/api/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: finalName })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) { alert("Errore: " + data.error); return; }
-            lastVersion = -1;  // forza aggiornamento
-        })
-        .catch(err => alert("Errore salvataggio: " + err));
-    };
-
-    // ------------------------------------------------------------------ //
-    //  Apri file dal server (dialog con lista file)
-    // ------------------------------------------------------------------ //
-    const fileOverlay = document.getElementById("file-overlay");
-    const fileListEl  = document.getElementById("file-list");
-
-    window.showOpenDialog = function() {
-        fileOverlay.classList.add("visible");
-        fileListEl.innerHTML = '<div class="file-empty">Caricamento...</div>';
-
-        fetch("/api/files")
-            .then(r => r.json())
-            .then(data => {
-                if (!data.files || data.files.length === 0) {
-                    fileListEl.innerHTML = '<div class="file-empty">Nessun file .md nella cartella documents/</div>';
-                    return;
-                }
-                let html = "";
-                for (const f of data.files) {
-                    const sizeKb = (f.size / 1024).toFixed(1);
-                    html += '<div class="file-item" onclick="loadFile(\'' +
-                        escapeHtml(f.name).replace(/'/g, "\\'") + '\')">' +
-                        '<span>' + escapeHtml(f.name) + '</span>' +
-                        '<span class="file-size">' + sizeKb + ' KB</span>' +
-                        '</div>';
-                }
-                fileListEl.innerHTML = html;
-            })
-            .catch(() => {
-                fileListEl.innerHTML = '<div class="file-empty">Errore di connessione</div>';
-            });
-    };
-
-    window.closeOpenDialog = function() {
-        fileOverlay.classList.remove("visible");
-    };
-
-    window.closeDialog = function(event) {
-        // Chiudi se si clicca fuori dal dialog
-        if (event.target === fileOverlay) {
-            closeOpenDialog();
-        }
-    };
-
-    window.loadFile = function(filename) {
-        fetch("/api/load", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ filename: filename })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) { alert("Errore: " + data.error); return; }
-            lastVersion = -1;  // forza aggiornamento
-            closeOpenDialog();
-        })
-        .catch(err => alert("Errore caricamento: " + err));
-    };
 
     // ------------------------------------------------------------------ //
     //  Font size
